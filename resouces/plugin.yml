@@ -1,0 +1,5 @@
+name: Terreno
+main: me.jonasxpx.terreno.Terreno
+version: 3
+commands:
+    terreno:

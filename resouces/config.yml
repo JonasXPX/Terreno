@@ -1,0 +1,45 @@
+Tamanhos:
+    Terrenos:
+       Pequeno: 12
+       Medio: 22
+       Grande: 30
+    DistanciaMinima: 1
+Valores:
+    Terreno:
+        Pequeno: 50000.0
+        Medio: 150000.0
+        Grande: 2000000.0
+    Funcao:
+        AtivarPVP: 50000.0
+        DesativarPVP: 250000.0
+        AtivarEntrada: 50000.0
+        AtivarCMD: 50000.0
+        DesativarCMD: 200000.0
+        DesativarEntrada: 500000.0
+        DesativarFix: 500000.0
+        AtivarFix: 50000.0
+Outros:
+    CriarCerca: true
+    IDCerca: 113
+    MundosBloqueados:
+     - endcraft
+     - endcraft_the_end
+     - SpotWorld
+     - plotworld
+    Multiplicador:
+        world_teste:
+           Valor: 2
+    Schematics:
+        world_teste:
+           Pequeno:
+               SchemName: teste
+Lang:
+  LIMITREGION: '&c» Você não pode mais comprar terrenos'
+  NOMONEY: '&c» Você não tem mais dinheiro para comprar terrenos'
+  NEARREGION: '&c» Existe um terreno próximo de você, afaste-se"'
+  NOREGION: '&c» Nenhum terreno encontrado nesta posição'
+  CONFIRMCOMMAND: '&c» Digite o comando novamente para confirmar a exclusão do terreno'
+  SUCESSDELETE: '&b» Seu terreno foi deletado com sucesso'
+  NOOWNERDELETE: '&c» Você não pode deletar este terreno, você não é o dono'
+  NOOWNER: '&c» Você não é dono deste terreno'
+  NULLERRO: '&c» Erro grave!, informe ao staff.'

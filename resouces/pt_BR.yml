@@ -1,0 +1,10 @@
+Lang:
+ LIMITREGION: Você não pode mais comprar terrenos
+ NOMONEY: Você não tem mais dinheiro para comprar terrenos
+ NEARREGION: Existe um região próxima a sua, afatece
+ NOREGION: Nenhum terreno encontrado nesta posição
+ CONFIRMCOMMAND: Digite o comando novamente para confirmar a exclusão do terreno
+ SUCESSDELETE: Seu terreno foi deletado com sucesso
+ NOOWNERDELETE: Você não pode deletar este terreno, você não é o dono
+ NOOWNER: Você não é dono deste terreno 
+ NULLERRO: Erro grave!, informe ao staff.
