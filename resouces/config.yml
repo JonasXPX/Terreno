@@ -33,13 +33,4 @@ Outros:
         world_teste:
            Pequeno:
                SchemName: teste
-Lang:
-  LIMITREGION: '&c» Você não pode mais comprar terrenos'
-  NOMONEY: '&c» Você não tem mais dinheiro para comprar terrenos'
-  NEARREGION: '&c» Existe um terreno próximo de você, afaste-se"'
-  NOREGION: '&c» Nenhum terreno encontrado nesta posição'
-  CONFIRMCOMMAND: '&c» Digite o comando novamente para confirmar a exclusão do terreno'
-  SUCESSDELETE: '&b» Seu terreno foi deletado com sucesso'
-  NOOWNERDELETE: '&c» Você não pode deletar este terreno, você não é o dono'
-  NOOWNER: '&c» Você não é dono deste terreno'
-  NULLERRO: '&c» Erro grave!, informe ao staff.'
+default-lang: pt_br
