@@ -1,18 +1,5 @@
 package me.jonasxpx.terreno;
 
-import static me.jonasxpx.terreno.worldedit.Edicao.createWalls;
-
-import java.text.NumberFormat;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.entity.Player;
-
 import com.google.common.collect.Lists;
 import com.sk89q.worldedit.BlockVector;
 import com.sk89q.worldedit.MaxChangedBlocksException;
@@ -27,43 +14,76 @@ import com.sk89q.worldguard.protection.flags.StateFlag.State;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
-
+import me.jonasxpx.terreno.config.Configuration;
+import me.jonasxpx.terreno.data.Price;
+import me.jonasxpx.terreno.enums.Bloqueaveis;
+import me.jonasxpx.terreno.enums.TiposTerrenos;
 import me.jonasxpx.terreno.error.Erros;
+import me.jonasxpx.terreno.worldedit.Edicao;
+import me.jonasxpx.terreno.worldedit.PlayerManager;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
+
+import javax.inject.Inject;
+import java.text.NumberFormat;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+import static me.jonasxpx.terreno.utils.MessageUtils.sendMessage;
+import static me.jonasxpx.terreno.utils.MessageUtils.sendToPlayer;
 
 public class Tools {
 
-	public static Map<String, Long> timeout = new HashMap<>();
+	@Inject
+	private Configuration configuration;
 
-	public static void createRegionForPlayer(Player player, TiposTerrenos terreno) {
-		if (!hasMoney(player, terreno.getValor())) {
-			Erros.NOMONEY.sendToPlayer(player);
+	@Inject
+	private Edicao edicao;
+
+	public void createRegionForPlayer(final Player player, final TiposTerrenos terreno) {
+		final Double price = configuration.getPriceByType(terreno);
+		if (!hasMoney(player, price)) {
+			sendToPlayer(player, Erros.NOMONEY, configuration);
 			return;
 		}
-		PlayerManager pm = new PlayerManager(player);
-		if (pm.getAmount() >= getPerm(player)){
-			Erros.LIMITREGION.sendToPlayer(player);
+
+		final PlayerManager playerManager = new PlayerManager(player, this);
+		if (playerManager.getAmount() >= getPerm(player)) {
+			sendToPlayer(player, Erros.LIMITREGION, configuration);
 			return;
 		}
-		String regionName = (player.getName() + "-" + pm.forNextInt(player)).toLowerCase();
-		RegionManager r = Terreno.wg.getRegionManager(player.getWorld());
-		ProtectedCuboidRegion pcr = new ProtectedCuboidRegion(regionName, toVector(point1(player
-				.getLocation(), terreno.getTamanho())), toVector(point2(player
-				.getLocation(), terreno.getTamanho())));
-		if (!checkRegionNear(r, pcr)) {
-			Erros.NEARREGION.sendToPlayer(player);
+
+		final Integer size = configuration.getSizeByType(terreno);
+		final String regionName = (player.getName() + "-" + playerManager.forNextInt(player)).toLowerCase();
+		final RegionManager regionManager = Terreno.wg.getRegionManager(player.getWorld());
+		final BlockVector blockVectorX = toVector(point1(player.getLocation(), size));
+		final BlockVector blockVectorY = toVector(point2(player.getLocation(), size));
+		final ProtectedCuboidRegion cuboidRegion = new ProtectedCuboidRegion(regionName, blockVectorX, blockVectorY);
+
+		if (!checkRegionNear(regionManager, cuboidRegion)) {
+			sendToPlayer(player, Erros.NEARREGION, configuration);
 			return;
 		}
-		DefaultDomain dd = new DefaultDomain();
-		dd.addPlayer(new com.sk89q.worldguard.bukkit.BukkitPlayer(Terreno.wg, player));
-		pcr.setOwners(dd);
-		pcr.setPriority(5);
-		pcr.setFlag(DefaultFlag.USE, State.DENY);
-		r.addRegion(pcr);
-		pm.addNewRegion(regionName);
-		if(Terreno.instance.schematic.containsKey(player.getWorld().getName())){
-			Map<TiposTerrenos, String> sch = Terreno.instance.schematic.get(player.getWorld().getName());
-			if(sch.containsKey(terreno)){
-				SchematicManager sm = new SchematicManager(Vector.getMidpoint(r.getRegion(regionName).getMinimumPoint(), r.getRegion(regionName).getMaximumPoint()).setY(player.getLocation().getBlockY()), sch.get(terreno));
+
+		final DefaultDomain defaultDomain = new DefaultDomain();
+		defaultDomain.addPlayer(new BukkitPlayer(Terreno.wg, player));
+		
+		cuboidRegion.setOwners(defaultDomain);
+		cuboidRegion.setPriority(5);
+		cuboidRegion.setFlag(DefaultFlag.USE, State.DENY);
+		regionManager.addRegion(cuboidRegion);
+		playerManager.addNewRegion(regionName);
+		
+		if (configuration.getSchematic().containsKey(player.getWorld().getName())) {
+			Map<TiposTerrenos, String> sch = configuration.getSchematic().get(player.getWorld().getName());
+			if (sch.containsKey(terreno)) {
+				SchematicManager sm = new SchematicManager(
+						Vector.getMidpoint(regionManager.getRegion(regionName).getMinimumPoint(),
+								regionManager.getRegion(regionName).getMaximumPoint()).setY(player.getLocation().getBlockY()),
+						sch.get(terreno));
 				try {
 					sm.loadSchematic(new BukkitWorld(player.getWorld()));
 				} catch (Exception e2) {
@@ -71,33 +91,34 @@ public class Tools {
 				}
 			}
 		}
+
 		try {
-			r.save();
+			regionManager.save();
 		} catch (Exception e1) {
 			e1.printStackTrace();
 		}
-		double valor;
-		withdraw(player, (valor = multiplicarValor(player.getWorld().getName().toLowerCase(), terreno.getValor())));
-		player.sendMessage("ßbª Terreno ße" + terreno.getName()
-				+ "ßb adiquirido, por ße" + NumberFormat.getInstance().format(valor) + "ßb Coins");
+
+		final double valor = multiplicarValor(player.getWorld().getName().toLowerCase(), price);
+		withdraw(player, valor);
+		sendMessage("$bTerreno $e" + terreno.name() + "$b adiquirido, por $e"
+				+ NumberFormat.getInstance().format(valor) + "$b Coins", player);
 		try {
-			createWalls(pcr, player);
+			edicao.createWalls(cuboidRegion, player);
 		} catch (MaxChangedBlocksException e) {
 			e.printStackTrace();
 		}
 	}
 
-	public static ProtectedRegion getRegion(Location loc){
-		Iterator<ProtectedRegion> pr;
-		if(!(pr = Terreno.wg.getRegionManager(loc.getWorld()).getApplicableRegions(loc).iterator()).hasNext())
+	public ProtectedRegion getRegion(Location loc) {
+		Iterator<ProtectedRegion> pr = Terreno.wg.getRegionManager(loc.getWorld()).getApplicableRegions(loc).iterator();
+		if (!pr.hasNext())
 			return null;
 		return pr.next();
 	}
-	
-	public static boolean checkRegionNear(RegionManager r, ProtectedCuboidRegion pcr) {
+
+	public boolean checkRegionNear(RegionManager r, ProtectedCuboidRegion pcr) {
 		try {
-			if (pcr.getIntersectingRegions(Lists.newArrayList(r.getRegions()
-					.values())).size() == 0) {
+			if (pcr.getIntersectingRegions(Lists.newArrayList(r.getRegions().values())).isEmpty()) {
 				return true;
 			}
 		} catch (Exception e) {
@@ -105,14 +126,14 @@ public class Tools {
 		}
 		return false;
 	}
-	
-	public static void transferirDono(Player owner, Player buyer, ProtectedRegion pr){
+
+	public void transferirDono(Player owner, Player buyer, ProtectedRegion pr) {
 		pr.getOwners().removePlayer(owner.getName());
 		pr.setMembers(new DefaultDomain());
 		pr.getOwners().addPlayer(buyer.getName());
-		PlayerManager pm = new PlayerManager(owner);
+		PlayerManager pm = new PlayerManager(owner, this);
 		pm.deleteRegion(pr.getId());
-		pm = new PlayerManager(buyer);
+		pm = new PlayerManager(buyer, this);
 		pm.addNewRegion(pr.getId());
 		try {
 			Terreno.wg.getRegionManager(buyer.getWorld()).save();
@@ -121,184 +142,185 @@ public class Tools {
 		}
 	}
 
-	
-	public static boolean checkRegionNear(Player player, int area) {
+	public boolean checkRegionNear(Player player, int area) {
 		RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
 		Location loc1 = point1(player.getLocation(), area);
 		Location loc2 = point2(player.getLocation(), area);
-		if (rm.getApplicableRegionsIDs(toVector(loc1)).isEmpty()
-				&& rm.getApplicableRegionsIDs(toVector(loc2)).isEmpty())
-			return true;
-		else
-			return false;
+		return rm.getApplicableRegionsIDs(toVector(loc1)).isEmpty()
+				&& rm.getApplicableRegionsIDs(toVector(loc2)).isEmpty();
 	}
 
-	public static String getInfo(Location loc) {
+	public String getInfo(Location loc) {
 		RegionManager rm = Terreno.wg.getRegionManager(loc.getWorld());
 		Iterable<ProtectedRegion> ap = rm.getApplicableRegions(loc);
 		StringBuilder sb = new StringBuilder();
 		for (ProtectedRegion s : ap) {
-			sb.append("ßbª ß3[EndCraft]ßb InformaÁıes sobre o terreno atual:");
+			sb.append("$b$3[EndCraft]$b Informa√ß√£es sobre o terreno atual:");
 			sb.append("\n");
-			sb.append("ßbª Dono: ße" + s.getOwners().getPlayers());
+			sb.append("$bDono: $e").append(s.getOwners().getPlayers());
 			sb.append("\n");
 			if (s.getMembers().size() > 0) {
-				sb.append("ßbª Amigos: ße" + s.getMembers().getPlayers());
+				sb.append("$bAmigos: $e").append(s.getMembers().getPlayers());
 				sb.append("\n");
 			}
-			sb.append("ßbª PVP: ße" + formatFlag(s.getFlag(DefaultFlag.PVP)));
+			sb.append("$bPVP: $e").append(formatFlag(s.getFlag(DefaultFlag.PVP)));
 			sb.append("\n");
-			sb.append("ßbª Entrada: ße" + formatFlag(s.getFlag(DefaultFlag.ENTRY)));
+			sb.append("$bEntrada: $e").append(formatFlag(s.getFlag(DefaultFlag.ENTRY)));
 			sb.append("\n");
 			if (s.getFlag(DefaultFlag.BLOCKED_CMDS) != null) {
-				sb.append("ßbª Comandos bloqueados: ße"
-						+ s.getFlag(DefaultFlag.BLOCKED_CMDS));
+				sb.append("$bComandos bloqueados: $e").append(s.getFlag(DefaultFlag.BLOCKED_CMDS));
 			}
-			
+
 		}
 		return sb.toString();
 	}
 
-	public static Location point1(Location loc, int blocos) {
+	private Location point1(Location loc, int blocos) {
 		loc.setY(0);
 		return loc.add(-blocos, 0, blocos);
 	}
 
-	public static Location point2(Location loc, int blocos) {
+	private Location point2(Location loc, int blocos) {
 		loc.setY(256);
 		return loc.add(blocos, 0, -blocos);
 	}
 
-	public static BlockVector toVector(Location loc) {
+	private BlockVector toVector(Location loc) {
 		return new BlockVector(loc.getX(), loc.getY(), loc.getZ());
 	}
 
-	public static void tpRegion(Player player, int ID) {
+	public void teleportPlayerToRegion(Player player, int regionId) {
 		RegionManager ap = Terreno.wg.getRegionManager(player.getWorld());
-		PlayerManager pm = new PlayerManager(player);
-		if(ID >= pm.getRegions().size()){
-			Erros.NOREGION.sendToPlayer(player);
+		PlayerManager pm = new PlayerManager(player, this);
+		if (regionId >= pm.getRegions().size()) {
+			sendToPlayer(player, Erros.NOREGION, configuration);
 			return;
 		}
-		if (ap.hasRegion(pm.getRegions().get(ID))) {
-			ProtectedRegion pr = ap.getRegion(pm.getRegions().get(ID));
-			player.teleport(new Location(player.getWorld(), pr
-					.getMaximumPoint().getX() + 1, player.getWorld()
-					.getHighestBlockYAt(pr.getMaximumPoint().getBlockX(), pr
-							.getMaximumPoint().getBlockZ()), pr
-					.getMaximumPoint().getZ() + 1));
-		}else{
-			player.sendMessage("ßcTerreno n„o encontrado.");
-		}
-	}
-	public static void tpRegionOfflinePlayer(Player onlinePlayer, String offlinePlayer, String ID) {
-		if(!onlinePlayer.isOp()){return;}
-		RegionManager ap = Terreno.wg.getRegionManager(onlinePlayer.getWorld());
-		if (ap.hasRegion(offlinePlayer + "-" + ID)) {
-			ProtectedRegion pr = ap.getRegion(offlinePlayer + "-" + ID);
-			onlinePlayer.teleport(new Location(onlinePlayer.getWorld(), pr
-					.getMaximumPoint().getX() + 1, onlinePlayer.getWorld()
-					.getHighestBlockYAt(pr.getMaximumPoint().getBlockX(), pr
-							.getMaximumPoint().getBlockZ()), pr
-					.getMaximumPoint().getZ() + 1));
+		if (ap.hasRegion(pm.getRegions().get(regionId))) {
+			ProtectedRegion pr = ap.getRegion(pm.getRegions().get(regionId));
+			player.teleport(new Location(
+					player.getWorld(), pr.getMaximumPoint().getX() + 1, player.getWorld()
+							.getHighestBlockYAt(pr.getMaximumPoint().getBlockX(), pr.getMaximumPoint().getBlockZ()),
+					pr.getMaximumPoint().getZ() + 1));
+		} else {
+			sendMessage("$cTerreno n√£o encontrado.", player);
 		}
 	}
 
-	public static void blockedcmds(Player player, Bloqueaveis bq) {
-		RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
-		ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
+	public void teleportPlayerToRegion(Player onlinePlayer, String offlinePlayer, String regionId) {
+		if (!onlinePlayer.isOp()) {
+			return;
+		}
+		RegionManager ap = Terreno.wg.getRegionManager(onlinePlayer.getWorld());
+		if (ap.hasRegion(offlinePlayer + "-" + regionId)) {
+			ProtectedRegion pr = ap.getRegion(offlinePlayer + "-" + regionId);
+			onlinePlayer.teleport(new Location(
+					onlinePlayer.getWorld(), pr.getMaximumPoint().getX() + 1, onlinePlayer.getWorld()
+							.getHighestBlockYAt(pr.getMaximumPoint().getBlockX(), pr.getMaximumPoint().getBlockZ()),
+					pr.getMaximumPoint().getZ() + 1));
+		}
+	}
+
+	public void blockedCommands(Player player, Bloqueaveis lockable) {
+		final RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
+		final ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
+		final Price price = configuration.getLockablePricesByType(lockable);
+		final String lockableName = configuration.getLockableNameByType(lockable);
+
 		if (ap.isOwnerOfAll(new BukkitPlayer(Terreno.wg, player))) {
-			if (ap.size() == 0 || ap.iterator().hasNext() == false) {
-				player.sendMessage("ßbª Nenhum terreno encontrado nesta posiÁ„o");
+			if (ap.size() == 0 || !ap.iterator().hasNext()) {
+				sendMessage("$bNenhum terreno encontrado nesta posi√ß√£o", player);
 				return;
 			}
-			if (!hasMoney(player, bq.getValorDesativar())) {
-				player.sendMessage("ßcª VocÍ n„o tem dinheiro para isso!.");
+			if (!hasMoney(player, price.getDesactive())) {
+				sendMessage("$cVoc√™ n√£o tem dinheiro para isso!.", player);
 				return;
 			}
-			if (bq == Bloqueaveis.PVP) {
+			if (lockable == Bloqueaveis.PVP) {
 				ap.iterator().next().setFlag(DefaultFlag.PVP, State.DENY);
-				player.sendMessage("ßbª PVP removido com sucesso!.");
-				withdraw(player, bq.getValorDesativar());
+				sendMessage("$bPVP removido com sucesso!.", player);
+				withdraw(player, price.getDesactive());
 				return;
 			}
-			if(bq == Bloqueaveis.ENTRY){
+			if (lockable == Bloqueaveis.ENTRY) {
 				ap.iterator().next().setFlag(DefaultFlag.ENTRY, State.DENY);
-				player.sendMessage("ßbª Entrada removida com sucesso!.");
-				withdraw(player, bq.getValorAtivar());
+				sendMessage("$bEntrada removida com sucesso!.", player);
+				withdraw(player, price.getActive());
 				return;
 			}
 			Set<String> at = null;
 			if (ap.getFlag(DefaultFlag.BLOCKED_CMDS) != null) {
-				if (ap.getFlag(DefaultFlag.BLOCKED_CMDS).contains("/"+ bq.getNome())) {
-					player.sendMessage("ßbª Esse comando j· esta bloqueado");
+				if (ap.getFlag(DefaultFlag.BLOCKED_CMDS).contains("/" + lockableName)) {
+					sendMessage("$bEsse comando j√° esta bloqueado", player);
 					return;
 				}
 				at = ap.getFlag(DefaultFlag.BLOCKED_CMDS);
 			} else
 				at = new HashSet<>();
-			at.add("/" + bq.getNome());
+			at.add("/" + lockableName);
 			ap.iterator().next().setFlag(DefaultFlag.BLOCKED_CMDS, at);
-			player.sendMessage("ßbª Comando bloqueado com sucesso!.");
-			withdraw(player, bq.getValorDesativar());
+			sendMessage("$bComando bloqueado com sucesso!.", player);
+			withdraw(player, price.getDesactive());
 			save(rm);
 		} else
-			Erros.NOOWNER.sendToPlayer(player);
+			sendToPlayer(player, Erros.NOOWNER, configuration);
 	}
 
-	public static void allowedcmds(Player player, Bloqueaveis bq) {
-		RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
-		ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
+	public void allowedCommands(Player player, Bloqueaveis bloqueaveis) {
+		final RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
+		final ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
+		final String name = configuration.getLockableNameByType(bloqueaveis);
+		final Price price = configuration.getLockablePricesByType(bloqueaveis);
 		if (ap.isOwnerOfAll(new BukkitPlayer(Terreno.wg, player))) {
-			if (ap.size() == 0 || ap.iterator().hasNext() == false) {
-				Erros.NOREGION.sendToPlayer(player);
+			if (ap.size() == 0 || !ap.iterator().hasNext()) {
+				sendToPlayer(player, Erros.NOREGION, configuration);
 				return;
 			}
-			if (!hasMoney(player, bq.getValorAtivar())) {
-				Erros.NOMONEY.sendToPlayer(player);
+			if (!hasMoney(player, price.getActive())) {
+				sendToPlayer(player, Erros.NOMONEY, configuration);
 				return;
 			}
-			if (bq == Bloqueaveis.PVP) {
+			if (bloqueaveis == Bloqueaveis.PVP) {
 				ap.iterator().next().setFlag(DefaultFlag.PVP, State.ALLOW);
-				player.sendMessage("ßbª PVP ativado com sucesso!.");
-				withdraw(player, bq.getValorAtivar());
+				sendMessage("$bPVP ativado com sucesso!.", player);
+				withdraw(player, price.getActive());
 				return;
 			}
-			if(bq == Bloqueaveis.ENTRY){
+			if (bloqueaveis == Bloqueaveis.ENTRY) {
 				ap.iterator().next().setFlag(DefaultFlag.ENTRY, State.ALLOW);
-				player.sendMessage("ßbª Entrada liberada com sucesso!.");
-				withdraw(player, bq.getValorAtivar());
+				sendMessage("$bEntrada liberada com sucesso!.", player);
+				withdraw(player, price.getActive());
 				return;
 			}
 			Set<String> at;
-			
-			if (ap.getFlag(DefaultFlag.BLOCKED_CMDS) == null || !ap.getFlag(DefaultFlag.BLOCKED_CMDS).contains("/"
-					+ bq.getNome())) {
-				player.sendMessage("ßbª Esse comando j· esta liberado!.");
+
+			if (ap.getFlag(DefaultFlag.BLOCKED_CMDS) == null
+					|| !ap.getFlag(DefaultFlag.BLOCKED_CMDS).contains("/" + name)) {
+				sendMessage("$bEsse comando j√° esta liberado!.", player);
 				return;
 			}
 			at = ap.getFlag(DefaultFlag.BLOCKED_CMDS);
-			at.remove("/" + bq.getNome());
+			at.remove("/" + name);
 			ap.iterator().next().setFlag(DefaultFlag.BLOCKED_CMDS, at);
-			player.sendMessage("ßbª Comando desbloqueado com sucesso!.");
-			withdraw(player, bq.getValorAtivar());
+			sendMessage("$bComando desbloqueado com sucesso!.", player);
+			withdraw(player, price.getActive());
 			save(rm);
 		} else
-			player.sendMessage("ßcª VocÍ n„o È dono deste terreno!.");
+			sendMessage("$cVoc√™ n√£o √© dono deste terreno!.", player);
 	}
 
-	private static String formatFlag(State state) {
+	private String formatFlag(State state) {
 		if (state == State.DENY)
 			return "Desativado";
 		return "Ativado";
 	}
 
-	public static void addMember(Player player, String name) {
+	public void addMember(Player player, String name) {
 		RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
 		ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
 		if (ap.isOwnerOfAll(new BukkitPlayer(Terreno.wg, player))) {
 			if (!ap.iterator().hasNext()) {
-				Erros.NOREGION.sendToPlayer(player);
+				sendToPlayer(player, Erros.NOREGION, configuration);
 				return;
 			}
 			DefaultDomain dm = null;
@@ -308,108 +330,97 @@ public class Tools {
 			else
 				dm = new DefaultDomain();
 			if (dm.contains(name)) {
-				player.sendMessage("ßcª Este jogador j· esta adicionado ao seu terreno");
+				sendMessage("$cEste jogador j√© esta adicionado ao seu terreno", player);
 				return;
 			}
 			dm.addPlayer(name);
 			pr.setMembers(dm);
-			player.sendMessage("ßbª Jogador ße" + name
-					+ " ßbAdicionado ao seu terreno!.");
+			sendMessage("$bJogador $e" + name + " $bAdicionado ao seu terreno!.", player);
 			save(rm);
 		} else
-			Erros.NOOWNER.sendToPlayer(player);
+			sendToPlayer(player, Erros.NOOWNER, configuration);
 	}
 
-	public static void save(RegionManager rm){
+	private void save(RegionManager rm) {
 		try {
 			rm.save();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
-	public static void delMember(Player player, String name) {
+
+	public void delMember(Player player, String name) {
 		RegionManager rm = Terreno.wg.getRegionManager(player.getWorld());
-		ApplicableRegionSet ap = rm.getApplicableRegions(player.getLocation());
-		if(!isOwner(player, ap)){
-			Erros.NOOWNER.sendToPlayer(player);
+		ApplicableRegionSet protectedRegions = rm.getApplicableRegions(player.getLocation());
+		if (!isOwner(player, protectedRegions)) {
+			sendToPlayer(player, Erros.NOOWNER, configuration);
 			return;
 		}
-		if (!ap.iterator().hasNext()) {
-			player.sendMessage("ßbª Nenhum terreno encontrado nesta posiÁ„o");
+		if (!protectedRegions.iterator().hasNext()) {
+			sendMessage("$bNenhum terreno encontrado nesta posi√ß√£o", player);
 			return;
 		}
-		DefaultDomain dm = null;
+		DefaultDomain defaultDomain = null;
 		ProtectedRegion pr;
-		if ((pr = ap.iterator().next()).getMembers() != null)
-			dm = ap.iterator().next().getMembers();
+		if ((pr = protectedRegions.iterator().next()).getMembers() != null)
+			defaultDomain = protectedRegions.iterator().next().getMembers();
 		else
-			dm = new DefaultDomain();
-		if (!dm.contains(name)) {
-			player.sendMessage("ßcª Este jogador n„o esta adicionado ao seu terreno");
+			defaultDomain = new DefaultDomain();
+		if (!defaultDomain.contains(name)) {
+			sendMessage("$cEste jogador n√£o esta adicionado ao seu terreno", player);
 			return;
 		}
-		dm.removePlayer(name);
-		pr.setMembers(dm);
-		player.sendMessage("ßbª Jogador ße" + name
-				+ " ßbremovido do seu terreno!.");
+		defaultDomain.removePlayer(name);
+		pr.setMembers(defaultDomain);
+		sendMessage("$bJogador $e" + name + " $bremovido do seu terreno!.", player);
 		save(rm);
-			
 	}
 
-	private static void withdraw(Player player, double money) {
+	public void deleteRegion(final Player player) {
+		edicao.deleteRegion(player, this);
+	}
+
+	private void withdraw(Player player, double money) {
 		Terreno.economy.withdrawPlayer(player, money);
 	}
 
-	private static boolean hasMoney(Player player, double money) {
-		if (Terreno.economy.getBalance(player) >= money)
-			return true;
-		else
-			return false;
+	private boolean hasMoney(Player player, double money) {
+		return Terreno.economy.getBalance(player) >= money;
 	}
 
-	public static void addTime(Player player, Long time) {
-		timeout.put(player.getName(), (System.currentTimeMillis() / 1000)
-				+ time);
+	public double multiplicarValor(String world, double valor) {
+		return configuration.getMultiplicador().get(world.toLowerCase()) == null ? valor
+				: configuration.getMultiplicador().get(world.toLowerCase()) * valor;
 	}
-	
-	public static double multiplicarValor(String world, double valor){
-		return Terreno.instance.multiplicador.get(world.toLowerCase()) == null ? valor : Terreno.instance.multiplicador.get(world.toLowerCase()) * valor;
-	}
-	private static int getPerm(Player p){
+
+	private int getPerm(Player p) {
 		int max = -2;
-		
+
 		int maxlimit = 255;
-		
-		if(p.hasPermission("terreno.max.*"))
-		{
+
+		if (p.hasPermission("terreno.max.*")) {
 			return 9999;
-		}
-		else
-		{
-			for(int ctr = 0; ctr < maxlimit; ctr++)
-			{
-				if(p.hasPermission("terreno.max." + ctr))
-				{
+		} else {
+			for (int ctr = 0; ctr < maxlimit; ctr++) {
+				if (p.hasPermission("terreno.max." + ctr)) {
 					max = ctr;
 				}
 			}
-		
+
 		}
 		return max;
 	}
 
-	public static boolean isOwner(Player player, ProtectedRegion pr){
+	public boolean isOwner(Player player, ProtectedRegion pr) {
 		return pr.getOwners().getPlayers().contains(player.getName().toLowerCase());
 	}
-	public static boolean isOwner(Player player, ApplicableRegionSet apr){
+
+	public boolean isOwner(Player player, ApplicableRegionSet apr) {
 		return apr.isOwnerOfAll(new BukkitPlayer(Terreno.wg, player));
 	}
-	
-	public static boolean contains(World world, String name){
-		if(Terreno.wg.getRegionManager(world).getRegionExact(name) == null){
-			return false;
-		}
-		return true;
+
+	public boolean contains(World world, String name) {
+		return Terreno.wg.getRegionManager(world).getRegionExact(name) != null;
 	}
 
 }
